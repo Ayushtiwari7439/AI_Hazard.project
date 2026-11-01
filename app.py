@@ -4,6 +4,7 @@ import joblib
 import os
 import requests
 from datetime import datetime,timedelta
+from io import StringIO
 
 st.set_page_config(
     page_title="AI Multi-Hazard Early Warning System",
@@ -449,7 +450,7 @@ if "analysis_history" not in st.session_state:
 # Hazard selection
 hazard = st.selectbox(
     "Select Hazard",
-    ["Flood", "Heatwave", "Earthquake", "Landslide"]
+    ["Flood", "Heatwave", "Earthquake", "Landslide","Wildfire"]
 )
 
 st.subheader("Enter Environmental Data")
@@ -583,6 +584,40 @@ if st.button("Analyze Hazard Risk"):
             risk = "Moderate"
         else:
             risk = "Low"
+    elif hazard == "Wildfire":
+        if "wildfire_data" in st.session_state:
+            fire_df = st.session_state["wildfire_data"]
+
+            if not fire_df.empty and "frp" in fire_df.columns:
+                frp_values = pd.to_numeric(
+                    fire_df["frp"], errors="coerce"
+                ).dropna()
+
+                if not frp_values.empty:
+                    max_frp = frp_values.max()
+
+                    if max_frp >= 50:
+                        risk = "High"
+                    elif max_frp >= 10:
+                        risk = "Moderate"
+                    else:
+                        risk = "Low"
+
+                    st.write("Detected fire hotspots:", len(fire_df))
+                    st.write("Maximum Fire Radiative Power:", max_frp, "MW")
+                    st.caption(
+                        "This is a demo risk indicator based on satellite "
+                        "hotspot FRP, not a validated local wildfire forecast."
+                    )
+                else:
+                    risk = None
+                    st.warning("FRP data is not available.")
+            else:
+                risk = None
+                st.warning("Wildfire data is empty or FRP is unavailable.")
+        else:
+            risk = None
+            st.warning("Please fetch NASA wildfire data first.")
 
     # Show result and save it to history
     if risk is not None:
@@ -666,3 +701,121 @@ if st.session_state.analysis_history:
 
 else:
     st.info("No analyses yet. Click Analyze Hazard Risk to create your first record.")
+
+# ==============================
+# WORLDWIDE WILDFIRE MONITORING
+# NASA FIRMS Satellite Data
+# ==============================
+
+st.subheader("🔥 Worldwide Wildfire Monitoring")
+
+st.write(
+    "Monitor satellite-detected fire hotspots around the world "
+    "using NASA FIRMS data."
+)
+
+if st.button("Fetch Latest Wildfire Data"):
+
+    st.info("Button clicked! Connecting to NASA FIRMS...")
+
+    try:
+        nasa_key = st.secrets["NASA_FIRMS_MAP_KEY"]
+
+        wildfire_url = (
+            "https://firms.modaps.eosdis.nasa.gov/api/area/csv/"
+            f"{nasa_key}/VIIRS_SNPP_NRT/world/1"
+        )
+
+        with st.spinner("Fetching wildfire data from NASA..."):
+            response = requests.get(wildfire_url, timeout=60)
+
+        st.write("HTTP Status Code:", response.status_code)
+
+        if response.status_code != 200:
+            st.error("NASA API Error:")
+            st.code(response.text[:500])
+
+        elif not response.text.strip():
+            st.warning("NASA returned an empty response.")
+
+        elif "latitude" not in response.text.lower():
+            st.error("NASA did not return valid CSV data.")
+            st.code(response.text[:500])
+
+        else:
+            fire_df = pd.read_csv(StringIO(response.text))
+
+            if fire_df.empty:
+                st.warning("No fire hotspots found in the latest data.")
+
+            else:
+                st.session_state["wildfire_data"] = fire_df
+                st.success("NASA wildfire data fetched successfully!")
+                st.write("Total records received:", len(fire_df))
+
+    except Exception as e:
+        st.error(f"Wildfire data error: {e}")
+
+
+if "wildfire_data" in st.session_state:
+
+    fire_df = st.session_state["wildfire_data"]
+
+    st.markdown("### 🔥 Wildfire Statistics")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Total Fire Hotspots", len(fire_df))
+
+    if "confidence" in fire_df.columns:
+        high_confidence = (
+            fire_df["confidence"].astype(str).str.upper() == "H"
+        ).sum()
+        col2.metric("High Confidence Fires", int(high_confidence))
+    else:
+        col2.metric("High Confidence Fires", "N/A")
+
+    if "frp" in fire_df.columns:
+        avg_frp = pd.to_numeric(
+            fire_df["frp"], errors="coerce"
+        ).mean()
+        col3.metric(
+            "Average Fire Radiative Power",
+            f"{avg_frp:.2f} MW" if pd.notna(avg_frp) else "N/A"
+        )
+    else:
+        col3.metric("Average FRP", "N/A")
+
+    st.markdown("### 🌍 Global Fire Hotspot Map")
+
+    if {"latitude", "longitude"}.issubset(fire_df.columns):
+        map_df = fire_df[["latitude", "longitude"]].copy()
+        map_df["latitude"] = pd.to_numeric(
+            map_df["latitude"], errors="coerce"
+        )
+        map_df["longitude"] = pd.to_numeric(
+            map_df["longitude"], errors="coerce"
+        )
+        map_df = map_df.dropna()
+
+        if not map_df.empty:
+            st.map(map_df.head(5000))
+        else:
+            st.warning("No valid map coordinates available.")
+
+    st.markdown("### 📊 Fire Detection Records")
+    st.dataframe(fire_df, use_container_width=True)
+
+    csv_data = fire_df.to_csv(index=False)
+
+    st.download_button(
+        "Download Wildfire Data CSV",
+        data=csv_data,
+        file_name="worldwide_wildfire_data.csv",
+        mime="text/csv"
+    )
+
+    st.caption(
+        "NASA FIRMS satellite detections are hotspot observations, "
+        "not confirmed wildfire incidents or official emergency warnings."
+    )
