@@ -37,214 +37,306 @@ st.warning(
 )
 # LIVE WEATHER DATA - FLOOD MODULE
 
-st.header("🌧️ Live Weather Monitoring")
+st.header("🌍 Worldwide Live Weather Monitoring")
 
-cities = {
-    # North India
-    "New Delhi": (28.6139, 77.2090),
-    "Chandigarh": (30.7333, 76.7794),
-    "Dehradun": (30.3165, 78.0322),
-    "Shimla": (31.1048, 77.1734),
-    "Srinagar": (34.0837, 74.7973),
-    "Jammu": (32.7266, 74.8570),
-    "Amritsar": (31.6340, 74.8723),
-    "Ludhiana": (30.9010, 75.8573),
-    "Gurugram": (28.4595, 77.0266),
-    "Noida": (28.5355, 77.3910),
-    "Ghaziabad": (28.6692, 77.4538),
-    "Jaipur": (26.9124, 75.7873),
-    "Lucknow": (26.8467, 80.9462),
-    "Kanpur": (26.4499, 80.3319),
-    "Varanasi": (25.3176, 82.9739),
-    "Prayagraj": (25.4358, 81.8463),
-
-    # East India
-    "Patna": (25.5941, 85.1376),
-    "Gaya": (24.7914, 85.0002),
-    "Ranchi": (23.3441, 85.3096),
-    "Jamshedpur": (22.8046, 86.2029),
-    "Kolkata": (22.5726, 88.3639),
-    "Bhubaneswar": (20.2961, 85.8245),
-    "Guwahati": (26.1445, 91.7362),
-    "Shillong": (25.5788, 91.8933),
-    "Agartala": (23.8315, 91.2868),
-
-    # West India
-    "Mumbai": (19.0760, 72.8777),
-    "Pune": (18.5204, 73.8567),
-    "Nagpur": (21.1458, 79.0882),
-    "Nashik": (19.9975, 73.7898),
-    "Ahmedabad": (23.0225, 72.5714),
-    "Surat": (21.1702, 72.8311),
-    "Vadodara": (22.3072, 73.1812),
-    "Rajkot": (22.3039, 70.8022),
-    "Panaji": (15.4909, 73.8278),
-    "Bhopal": (23.2599, 77.4126),
-    "Indore": (22.7196, 75.8577),
-    "Raipur": (21.2514, 81.6296),
-
-    # South India
-    "Chennai": (13.0827, 80.2707),
-    "Bengaluru": (12.9716, 77.5946),
-    "Hyderabad": (17.3850, 78.4867),
-    "Visakhapatnam": (17.6868, 83.2185),
-    "Vijayawada": (16.5062, 80.6480),
-    "Tirupati": (13.6288, 79.4192),
-    "Kochi": (9.9312, 76.2673),
-    "Thiruvananthapuram": (8.5241, 76.9366),
-    "Kozhikode": (11.2588, 75.7804),
-    "Coimbatore": (11.0168, 76.9558),
-    "Madurai": (9.9252, 78.1198),
-    "Mysuru": (12.2958, 76.6394),
-    "Mangaluru": (12.9141, 74.8560)
-}
-
-city = st.selectbox(
-    "Select monitoring location",
-    list(cities.keys())
+weather_location = st.text_input(
+    "Enter Any City or Country",
+    placeholder="Example: Tokyo, Japan"
 )
 
-if st.button("Fetch Live Weather"):
-    latitude, longitude = cities[city]
+if st.button("Fetch Worldwide Live Weather"):
 
-    url = "https://api.open-meteo.com/v1/forecast"
+    if not weather_location.strip():
+        st.warning("Please enter a location.")
 
-    params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "current": [
-            "temperature_2m",
-            "relative_humidity_2m",
-            "precipitation",
-            "rain"
-        ],
-        "daily": [
-            "precipitation_sum",
-            "precipitation_probability_max"
-        ],
-        "forecast_days": 3,
-        "timezone": "auto"
-    }
+    else:
+        try:
+            geo_url = "https://geocoding-api.open-meteo.com/v1/search"
 
-    try:
-        response = requests.get(
-            url,
-            params=params,
-            timeout=20
-        )
-        response.raise_for_status()
-        weather = response.json()
-       # Check weather data quality
-        current = weather.get("current", {})
+            geo_params = {
+                "name": weather_location,
+                "count": 10,
+                "language": "en",
+                "format": "json"
+            }
 
-        required_fields = [
-            "temperature_2m",
-            "relative_humidity_2m",
-            "precipitation"
-        ]
-
-        missing_fields = [
-            field for field in required_fields
-            if current.get(field) is None
-        ]
-
-        if missing_fields:
-            st.warning(
-                "Weather data is incomplete. Missing values: "
-                + ", ".join(missing_fields)
+            geo_response = requests.get(
+                geo_url,
+                params=geo_params,
+                timeout=20
             )
-        else:
-            st.success("Weather data quality check passed.")
+
+            geo_response.raise_for_status()
+
+            locations = geo_response.json().get("results", [])
+
+            if not locations:
+                st.warning("Location not found.")
+
+            else:
+                selected = locations[0]
+
+                latitude = selected["latitude"]
+                longitude = selected["longitude"]
+
+                city_name = selected["name"]
+                country = selected.get("country", "Unknown")
+
+                weather_url = (
+                    "https://api.open-meteo.com/v1/forecast"
+                )
+
+                weather_params = {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "current": [
+                        "temperature_2m",
+                        "relative_humidity_2m",
+                        "precipitation",
+                        "rain",
+                        "wind_speed_10m"
+                    ],
+                    "daily": [
+                        "precipitation_sum",
+                        "precipitation_probability_max"
+                    ],
+                    "forecast_days": 3,
+                    "timezone": "auto"
+                }
+
+                weather_response = requests.get(
+                    weather_url,
+                    params=weather_params,
+                    timeout=20
+                )
+
+                weather_response.raise_for_status()
+
+                weather_data = weather_response.json()
+
+                st.session_state["global_weather"] = {
+                    "city": city_name,
+                    "country": country,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "data": weather_data
+                }
+
+                st.success("Worldwide weather fetched successfully!")
+
+        except requests.RequestException as error:
+            st.error(f"Weather API Error: {error}")
 
 
-        st.session_state["live_weather"] = {
-            "city": city,
-            "data": weather,
-            "fetched_at": datetime.now().strftime(
-                "%d-%m-%Y %H:%M:%S"
-            )
-        }
+# DISPLAY WEATHER
 
-    except requests.RequestException as error:
-        st.error(f"Weather data fetch failed: {error}")
-# Display the most recently fetched weather
-if "live_weather" in st.session_state:
-    st.caption(
-        "Data fetched at: "
-        + st.session_state["live_weather"]["fetched_at"]
+if "global_weather" in st.session_state:
+
+    saved = st.session_state["global_weather"]
+
+    current = saved["data"]["current"]
+    daily = saved["data"]["daily"]
+
+    st.subheader(
+        f"Weather: {saved['city']}, {saved['country']}"
     )
-    saved = st.session_state["live_weather"]
-    weather = saved["data"]
-    current = weather["current"]
 
-    st.write("Live weather location:", saved["city"])
-    st.write(
-        "Latest observed/modelled rainfall:",
-        current["precipitation"],
-        "mm"
-    )
-
-    st.subheader(f"Weather for {saved['city']}")
-
-    current = weather["current"]
-    daily = weather["daily"]
-    if st.button("Use Live Weather for Flood Inputs"):
-        st.session_state["rainfall_input"] = float(
-            daily["precipitation_sum"][0]
-        )
-        st.session_state["temperature_input"] = float(
-            current["temperature_2m"]
-        )
-        st.session_state["humidity_input"] = int(
-            current["relative_humidity_2m"]
-        )
-        st.session_state["weather_input_city"] = saved["city"]
-
-        st.success(
-            "Weather values selected. Scroll down to review the inputs."
-        )
-        st.rerun()
-
-    col1, col2 = st.columns(2)
+    col1, col2, col3, col4 = st.columns(4)
 
     col1.metric(
-        "Current Temperature",
+        "Temperature",
         f"{current['temperature_2m']} °C"
     )
 
     col2.metric(
-        "Current Humidity",
+        "Humidity",
         f"{current['relative_humidity_2m']}%"
     )
 
-    st.write(
-        "Current precipitation:",
+    col3.metric(
+        "Rainfall",
         f"{current['precipitation']} mm"
     )
 
-    st.write(
-        "Current rain:",
-        f"{current['rain']} mm"
+    col4.metric(
+        "Wind Speed",
+        f"{current['wind_speed_10m']} km/h"
     )
+
+    st.write("Latitude:", saved["latitude"])
+    st.write("Longitude:", saved["longitude"])
 
     forecast_df = pd.DataFrame({
         "Date": daily["time"],
-        "Forecast Rainfall (mm)": daily["precipitation_sum"],
-        "Maximum Rain Probability (%)":
+        "Rainfall (mm)": daily["precipitation_sum"],
+        "Rain Probability (%)":
             daily["precipitation_probability_max"]
     })
 
-    st.subheader("Next 3 Days: Rainfall Forecast")
+    st.subheader("3-Day Weather Forecast")
+
     st.dataframe(
         forecast_df,
         hide_index=True,
         use_container_width=True
     )
 
+    if st.button("Use Weather Data for Flood Analysis"):
+
+        st.session_state["rainfall_input"] = float(
+            daily["precipitation_sum"][0]
+        )
+
+        st.session_state["temperature_input"] = float(
+            current["temperature_2m"]
+        )
+
+        st.session_state["humidity_input"] = int(
+            current["relative_humidity_2m"]
+        )
+
+        st.session_state["weather_input_city"] = saved["city"]
+
+        st.success("Weather data transferred to flood inputs.")
+
     st.caption(
-        "Source: Open-Meteo. Weather-model estimates may differ "
-        "from local observations. This data is not a flood warning."
+        "Source: Open-Meteo. Weather data is model-based "
+        "and is not an official disaster warning."
     )
+    # Worldwide City Coordinates
+# Used for Historical Rainfall and Earthquake Monitoring
+
+cities = {
+    # India
+    "New Delhi": (28.6139, 77.2090),
+    "Greater Noida": (28.4744, 77.5040),
+    "Noida": (28.5355, 77.3910),
+    "Mumbai": (19.0760, 72.8777),
+    "Pune": (18.5204, 73.8567),
+    "Nagpur": (21.1458, 79.0882),
+    "Nashik": (19.9975, 73.7898),
+    "Bengaluru": (12.9716, 77.5946),
+    "Mysuru": (12.2958, 76.6394),
+    "Chennai": (13.0827, 80.2707),
+    "Coimbatore": (11.0168, 76.9558),
+    "Hyderabad": (17.3850, 78.4867),
+    "Visakhapatnam": (17.6868, 83.2185),
+    "Vijayawada": (16.5062, 80.6480),
+    "Kolkata": (22.5726, 88.3639),
+    "Siliguri": (26.7271, 88.3953),
+    "Patna": (25.5941, 85.1376),
+    "Gaya": (24.7955, 84.9994),
+    "Lucknow": (26.8467, 80.9462),
+    "Kanpur": (26.4499, 80.3319),
+    "Varanasi": (25.3176, 82.9739),
+    "Prayagraj": (25.4358, 81.8463),
+    "Agra": (27.1767, 78.0081),
+    "Meerut": (28.9845, 77.7064),
+    "Gorakhpur": (26.7606, 83.3732),
+    "Jaipur": (26.9124, 75.7873),
+    "Udaipur": (24.5854, 73.7125),
+    "Jodhpur": (26.2389, 73.0243),
+    "Ahmedabad": (23.0225, 72.5714),
+    "Surat": (21.1702, 72.8311),
+    "Vadodara": (22.3072, 73.1812),
+    "Bhopal": (23.2599, 77.4126),
+    "Indore": (22.7196, 75.8577),
+    "Raipur": (21.2514, 81.6296),
+    "Ranchi": (23.3441, 85.3096),
+    "Bhubaneswar": (20.2961, 85.8245),
+    "Guwahati": (26.1445, 91.7362),
+    "Shillong": (25.5788, 91.8933),
+    "Imphal": (24.8170, 93.9368),
+    "Dehradun": (30.3165, 78.0322),
+    "Haridwar": (29.9457, 78.1642),
+    "Shimla": (31.1048, 77.1734),
+    "Srinagar": (34.0837, 74.7973),
+    "Jammu": (32.7266, 74.8570),
+    "Amritsar": (31.6340, 74.8723),
+    "Ludhiana": (30.9010, 75.8573),
+    "Chandigarh": (30.7333, 76.7794),
+    "Panaji": (15.4909, 73.8278),
+    "Thiruvananthapuram": (8.5241, 76.9366),
+    "Kochi": (9.9312, 76.2673),
+
+    # Asia
+    "Tokyo": (35.6762, 139.6503),
+    "Osaka": (34.6937, 135.5023),
+    "Seoul": (37.5665, 126.9780),
+    "Beijing": (39.9042, 116.4074),
+    "Shanghai": (31.2304, 121.4737),
+    "Hong Kong": (22.3193, 114.1694),
+    "Singapore": (1.3521, 103.8198),
+    "Bangkok": (13.7563, 100.5018),
+    "Jakarta": (-6.2088, 106.8456),
+    "Kuala Lumpur": (3.1390, 101.6869),
+    "Manila": (14.5995, 120.9842),
+    "Kathmandu": (27.7172, 85.3240),
+    "Dhaka": (23.8103, 90.4125),
+    "Colombo": (6.9271, 79.8612),
+    "Karachi": (24.8607, 67.0011),
+    "Lahore": (31.5204, 74.3587),
+    "Dubai": (25.2048, 55.2708),
+    "Abu Dhabi": (24.4539, 54.3773),
+    "Riyadh": (24.7136, 46.6753),
+    "Doha": (25.2854, 51.5310),
+    "Istanbul": (41.0082, 28.9784),
+    "Tashkent": (41.2995, 69.2401),
+
+    # Europe
+    "London": (51.5072, -0.1276),
+    "Paris": (48.8566, 2.3522),
+    "Berlin": (52.5200, 13.4050),
+    "Rome": (41.9028, 12.4964),
+    "Madrid": (40.4168, -3.7038),
+    "Barcelona": (41.3874, 2.1686),
+    "Amsterdam": (52.3676, 4.9041),
+    "Brussels": (50.8503, 4.3517),
+    "Zurich": (47.3769, 8.5417),
+    "Vienna": (48.2082, 16.3738),
+    "Prague": (50.0755, 14.4378),
+    "Stockholm": (59.3293, 18.0686),
+    "Oslo": (59.9139, 10.7522),
+    "Helsinki": (60.1699, 24.9384),
+    "Athens": (37.9838, 23.7275),
+    "Moscow": (55.7558, 37.6173),
+
+    # North America
+    "New York": (40.7128, -74.0060),
+    "Los Angeles": (34.0522, -118.2437),
+    "Chicago": (41.8781, -87.6298),
+    "Houston": (29.7604, -95.3698),
+    "San Francisco": (37.7749, -122.4194),
+    "Seattle": (47.6062, -122.3321),
+    "Washington DC": (38.9072, -77.0369),
+    "Toronto": (43.6532, -79.3832),
+    "Vancouver": (49.2827, -123.1207),
+    "Mexico City": (19.4326, -99.1332),
+
+    # South America
+    "Sao Paulo": (-23.5505, -46.6333),
+    "Rio de Janeiro": (-22.9068, -43.1729),
+    "Buenos Aires": (-34.6037, -58.3816),
+    "Lima": (-12.0464, -77.0428),
+    "Santiago": (-33.4489, -70.6693),
+    "Bogota": (4.7110, -74.0721),
+
+    # Africa
+    "Cairo": (30.0444, 31.2357),
+    "Nairobi": (-1.2921, 36.8219),
+    "Lagos": (6.5244, 3.3792),
+    "Johannesburg": (-26.2041, 28.0473),
+    "Cape Town": (-33.9249, 18.4241),
+    "Casablanca": (33.5731, -7.5898),
+
+    # Australia and Oceania
+    "Sydney": (-33.8688, 151.2093),
+    "Melbourne": (-37.8136, 144.9631),
+    "Perth": (-31.9505, 115.8605),
+    "Brisbane": (-27.4698, 153.0251),
+    "Auckland": (-36.8509, 174.7645),
+    "Wellington": (-41.2865, 174.7762)
+}
     # HISTORICAL RAINFALL ANALYSIS
 
 st.header("📊 Historical Rainfall Analysis")
@@ -304,7 +396,7 @@ if st.button("Fetch Last 7 Days Rainfall"):
     except (requests.RequestException, KeyError, ValueError) as error:
         st.error(f"Historical rainfall fetch failed: {error}")
 
-# Load flood model
+# Load flood mo
 if os.path.exists("flood_model.pkl"):
     model = joblib.load("flood_model.pkl")
 else:
@@ -429,7 +521,7 @@ if st.button("Analyze Hazard Risk"):
                 datetime.utcnow() -
                 timedelta(days=30)
             ).strftime("%Y-%m-%d"),
-            "minmagnitude": magnitude,
+            "minmagnitude": 0,
             "orderby": "time",
             "limit": 2000
         }
