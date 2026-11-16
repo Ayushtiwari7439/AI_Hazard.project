@@ -1,212 +1,246 @@
-import streamlit as st
-import pandas as pd
-import joblib
 import os
-import requests
-from datetime import datetime,timedelta
+import math
 from io import StringIO
+from datetime import datetime, timedelta
 
+import joblib
+import pandas as pd
+import requests
+import streamlit as st
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+
+# =========================================================
+# PAGE CONFIGURATION
+# =========================================================
 st.set_page_config(
     page_title="AI Multi-Hazard Early Warning System",
     page_icon="🌍",
     layout="wide"
 )
+# =========================================================
+# GLOBAL HISTORICAL FLOOD ANALYSIS
+# =========================================================
+
+st.header("🌍 Global Historical Flood Analysis")
+
+historical_file = os.path.join(
+    "historical_data",
+    "Global_Flood_Records.csv"
+)
+
+if os.path.exists(historical_file):
+
+    try:
+        historical_df = pd.read_csv(historical_file)
+
+        st.success("Historical Flood Dataset Loaded Successfully!")
+
+        # Clean column names
+        historical_df.columns = (
+            historical_df.columns.str.strip()
+        )
+
+        # Convert numeric columns
+        for col in [
+            "Fatalities",
+            "Displaced",
+            "Severity",
+            "Flood impact index"
+        ]:
+            historical_df[col] = pd.to_numeric(
+                historical_df[col].astype(str).str.replace(",", ""),
+                errors="coerce"
+            )
+
+        # Summary metrics
+        total_events = len(historical_df)
+        total_fatalities = historical_df["Fatalities"].sum()
+        total_displaced = historical_df["Displaced"].sum()
+        average_severity = historical_df["Severity"].mean()
+        average_impact = historical_df["Flood impact index"].mean()
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric("Total Flood Events", f"{total_events:,}")
+        c2.metric("Total Fatalities", f"{total_fatalities:,.0f}")
+        c3.metric("Total Displaced", f"{total_displaced:,.0f}")
+
+        c4, c5 = st.columns(2)
+
+        c4.metric(
+            "Average Severity",
+            f"{average_severity:.2f}" if pd.notna(average_severity) else "N/A"
+        )
+
+        c5.metric(
+            "Average Flood Impact Index",
+            f"{average_impact:.2f}" if pd.notna(average_impact) else "N/A"
+        )
+  
+        # =========================================================
+        # COUNTRY-WISE FLOOD ANALYSIS
+        # =========================================================
+
+        st.subheader("🌍 Country-wise Flood Analysis")
+
+        countries = sorted(
+            historical_df["Country"].dropna().astype(str).unique()
+        )
+
+        selected_country = st.selectbox(
+            "Select Country",
+            ["All Countries"] + countries
+        )
+
+        # Filter records
+        if selected_country == "All Countries":
+            filtered_df = historical_df.copy()
+        else:
+            filtered_df = historical_df[
+                historical_df["Country"].astype(str) == selected_country
+            ].copy()
+
+        # Country-wise metrics
+        st.subheader(f"Flood Statistics: {selected_country}")
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric("Flood Events", f"{len(filtered_df):,}")
+
+        col2.metric(
+            "Fatalities",
+            f"{filtered_df['Fatalities'].sum():,.0f}"
+        )
+
+        col3.metric(
+            "Displaced People",
+            f"{filtered_df['Displaced'].sum():,.0f}"
+        )
+
+        col4, col5 = st.columns(2)
+
+        avg_severity = filtered_df["Severity"].mean()
+        avg_impact = filtered_df["Flood impact index"].mean()
+
+        col4.metric(
+            "Average Severity",
+            f"{avg_severity:.2f}" if pd.notna(avg_severity) else "N/A"
+        )
+
+        col5.metric(
+            "Average Impact Index",
+            f"{avg_impact:.2f}" if pd.notna(avg_impact) else "N/A"
+        )
+        # COUNTRY-WISE FLOOD BAR GRAPH
+        st.subheader("📊 Flood Events by Country")
+
+        country_counts = (
+            filtered_df["Country"]
+            .value_counts()
+            .head(15)
+        )
+
+        st.bar_chart(country_counts)
+
+        # HISTORICAL FLOOD SEVERITY GRAPH
+        st.subheader("📊 Historical Flood Severity")
+
+        severity_counts = (
+            filtered_df["Severity"]
+            .dropna()
+            .round(1)
+            .value_counts()
+            .sort_index()
+        )
+
+        st.bar_chart(severity_counts)
+
+        # HISTORICAL FLOOD RECORDS
+        st.subheader("📋 Historical Flood Records")
+
+        st.dataframe(
+            filtered_df.head(100),
+            use_container_width=True
+     
+        )
+    # =========================================================
+        # YEAR-WISE HISTORICAL FLOOD ANALYSIS
+        # =========================================================
+
+        st.subheader("📅 Year-wise Historical Flood Analysis")
+
+        yearly_df = filtered_df.copy()
+
+        yearly_df["Start Date"] = pd.to_datetime(
+            yearly_df["Start Date"],
+            errors="coerce"
+        )
+
+        yearly_df["Year"] = yearly_df["Start Date"].dt.year
+
+        available_years = sorted(
+            yearly_df["Year"].dropna().unique().astype(int),
+            reverse=True
+        )
+
+        selected_year = st.selectbox(
+            "Select Year",
+            ["All Years"] + available_years
+        )
+
+        if selected_year == "All Years":
+            year_filtered_df = yearly_df.copy()
+        else:
+            year_filtered_df = yearly_df[
+                yearly_df["Year"] == selected_year
+            ]
+
+        yearly_counts = (
+            year_filtered_df["Year"]
+            .value_counts()
+            .sort_index()
+        )
+
+        st.write("Flood Events by Year")
+        st.bar_chart(yearly_counts)
+
+        st.metric(
+            "Flood Events in Selected Year",
+            f"{len(year_filtered_df):,}"
+        )
+
+
+
+
+
+    except Exception as error:
+        st.error(f"Historical Flood Analysis Error: {error}")
+
+else:
+    st.warning(
+        "Historical flood dataset not found. "
+        "Please check the historical_data folder."
+    )
 
 st.title("🌍 AI Multi-Hazard Early Warning System")
-st.write("AI-based hazard risk analysis dashboard")
-# OFFICIAL DISASTER INFORMATION
-
-st.subheader("🛡️ Official Disaster Information")
+st.write("AI-based multi-hazard monitoring and risk-analysis prototype")
 
 st.info(
-    "This application is a prototype, not an official warning service. "
-    "Check government alerts before taking emergency decisions."
+    "This application is an educational prototype, not an official warning "
+    "service. Always follow government alerts and local emergency authorities."
 )
 
-st.markdown(
-    "[🇮🇳 Open NDMA SACHET Official Alert Portal](https://sachet.ndma.gov.in/)"
-)
-
+st.subheader("🛡️ Official Disaster Information")
+st.markdown("[🇮🇳 NDMA SACHET Official Alert Portal](https://sachet.ndma.gov.in/)")
 st.markdown(
     "[🌊 CWC River Water-Level Dataset - National Water Data Portal]"
     "(https://nwdp.nwic.gov.in/en/dataset/river-water-level-telemetry-hourly-central-water-commission-cwc)"
 )
 
-st.warning(
-    "Educational prototype only. "
-    "Not for real emergency decisions."
-)
-# LIVE WEATHER DATA - FLOOD MODULE
-
-st.header("🌍 Worldwide Live Weather Monitoring")
-
-weather_location = st.text_input(
-    "Enter Any City or Country",
-    placeholder="Example: Tokyo, Japan"
-)
-
-if st.button("Fetch Worldwide Live Weather"):
-
-    if not weather_location.strip():
-        st.warning("Please enter a location.")
-
-    else:
-        try:
-            geo_url = "https://geocoding-api.open-meteo.com/v1/search"
-
-            geo_params = {
-                "name": weather_location,
-                "count": 10,
-                "language": "en",
-                "format": "json"
-            }
-
-            geo_response = requests.get(
-                geo_url,
-                params=geo_params,
-                timeout=20
-            )
-
-            geo_response.raise_for_status()
-
-            locations = geo_response.json().get("results", [])
-
-            if not locations:
-                st.warning("Location not found.")
-
-            else:
-                selected = locations[0]
-
-                latitude = selected["latitude"]
-                longitude = selected["longitude"]
-
-                city_name = selected["name"]
-                country = selected.get("country", "Unknown")
-
-                weather_url = (
-                    "https://api.open-meteo.com/v1/forecast"
-                )
-
-                weather_params = {
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "current": [
-                        "temperature_2m",
-                        "relative_humidity_2m",
-                        "precipitation",
-                        "rain",
-                        "wind_speed_10m"
-                    ],
-                    "daily": [
-                        "precipitation_sum",
-                        "precipitation_probability_max"
-                    ],
-                    "forecast_days": 3,
-                    "timezone": "auto"
-                }
-
-                weather_response = requests.get(
-                    weather_url,
-                    params=weather_params,
-                    timeout=20
-                )
-
-                weather_response.raise_for_status()
-
-                weather_data = weather_response.json()
-
-                st.session_state["global_weather"] = {
-                    "city": city_name,
-                    "country": country,
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "data": weather_data
-                }
-
-                st.success("Worldwide weather fetched successfully!")
-
-        except requests.RequestException as error:
-            st.error(f"Weather API Error: {error}")
-
-
-# DISPLAY WEATHER
-
-if "global_weather" in st.session_state:
-
-    saved = st.session_state["global_weather"]
-
-    current = saved["data"]["current"]
-    daily = saved["data"]["daily"]
-
-    st.subheader(
-        f"Weather: {saved['city']}, {saved['country']}"
-    )
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric(
-        "Temperature",
-        f"{current['temperature_2m']} °C"
-    )
-
-    col2.metric(
-        "Humidity",
-        f"{current['relative_humidity_2m']}%"
-    )
-
-    col3.metric(
-        "Rainfall",
-        f"{current['precipitation']} mm"
-    )
-
-    col4.metric(
-        "Wind Speed",
-        f"{current['wind_speed_10m']} km/h"
-    )
-
-    st.write("Latitude:", saved["latitude"])
-    st.write("Longitude:", saved["longitude"])
-
-    forecast_df = pd.DataFrame({
-        "Date": daily["time"],
-        "Rainfall (mm)": daily["precipitation_sum"],
-        "Rain Probability (%)":
-            daily["precipitation_probability_max"]
-    })
-
-    st.subheader("3-Day Weather Forecast")
-
-    st.dataframe(
-        forecast_df,
-        hide_index=True,
-        use_container_width=True
-    )
-
-    if st.button("Use Weather Data for Flood Analysis"):
-
-        st.session_state["rainfall_input"] = float(
-            daily["precipitation_sum"][0]
-        )
-
-        st.session_state["temperature_input"] = float(
-            current["temperature_2m"]
-        )
-
-        st.session_state["humidity_input"] = int(
-            current["relative_humidity_2m"]
-        )
-
-        st.session_state["weather_input_city"] = saved["city"]
-
-        st.success("Weather data transferred to flood inputs.")
-
-    st.caption(
-        "Source: Open-Meteo. Weather data is model-based "
-        "and is not an official disaster warning."
-    )
-    # Worldwide City Coordinates
-# Used for Historical Rainfall and Earthquake Monitoring
-
+# =========================================================
+# CITY COORDINATES
+# =========================================================
 cities = {
     # India
     "New Delhi": (28.6139, 77.2090),
@@ -231,7 +265,7 @@ cities = {
     "Kanpur": (26.4499, 80.3319),
     "Varanasi": (25.3176, 82.9739),
     "Prayagraj": (25.4358, 81.8463),
-    "Agra": (27.1767, 78.0081),
+    "Agra": (27.1767, 78.0080),
     "Meerut": (28.9845, 77.7064),
     "Gorakhpur": (26.7606, 83.3732),
     "Jaipur": (26.9124, 75.7873),
@@ -338,8 +372,470 @@ cities = {
     "Auckland": (-36.8509, 174.7645),
     "Wellington": (-41.2865, 174.7762)
 }
-    # HISTORICAL RAINFALL ANALYSIS
 
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    """Calculate great-circle distance between two coordinates in km."""
+    earth_radius_km = 6371.0
+    lat1, lon1, lat2, lon2 = map(
+        math.radians, [lat1, lon1, lat2, lon2]
+    )
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    )
+    return 2 * earth_radius_km * math.asin(math.sqrt(a))
+
+  # =========================================================
+# REAL GLOBAL FLOOD MONITORING - GloFAS + OPEN-METEO
+# =========================================================
+
+st.header("🌊 Real Global Flood Monitoring")
+
+st.write(
+    "Retrieve global river discharge observations and "
+    "rainfall forecast for a selected location."
+)
+
+flood_location = st.text_input(
+    "Enter location for flood monitoring",
+    placeholder="Example: Greater Noida, India",
+    key="global_flood_search_location"
+)
+
+if st.button("Fetch Real Flood Monitoring Data"):
+
+    if not flood_location.strip():
+        st.warning("Please enter a location.")
+
+    else:
+        try:
+            # STEP 1: Find location coordinates
+            geo_response = requests.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={
+                    "name": flood_location.strip(),
+                    "count": 1,
+                    "language": "en",
+                    "format": "json"
+                },
+                timeout=20
+            )
+
+            geo_response.raise_for_status()
+            geo_data = geo_response.json()
+
+            results = geo_data.get("results", [])
+
+            if not results:
+                st.error("Location not found. Try another city.")
+
+            else:
+                place = results[0]
+                latitude = place["latitude"]
+                longitude = place["longitude"]
+
+                st.success(
+                    f"Location found: {place['name']}, "
+                    f"{place.get('country', '')}"
+                )
+
+                # STEP 2: Fetch global river discharge data
+                river_response = requests.get(
+                    "https://flood-api.open-meteo.com/v1/flood",
+                    params={
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "daily": "river_discharge",
+                        "past_days": 30,
+                        "forecast_days": 30,
+                        "timezone": "GMT"
+                    },
+                    timeout=30
+                )
+
+                river_response.raise_for_status()
+                river_data = river_response.json()
+
+                river_daily = river_data.get("daily", {})
+                river_dates = river_daily.get("time", [])
+                river_values = river_daily.get(
+                    "river_discharge", []
+                )
+
+                if river_dates and river_values:
+                    river_df = pd.DataFrame({
+                        "Date": river_dates,
+                        "River Discharge (m³/s)": river_values
+                    })
+
+                    river_df["River Discharge (m³/s)"] = (
+                        pd.to_numeric(
+                            river_df["River Discharge (m³/s)"],
+                            errors="coerce"
+                        )
+                    )
+
+                    st.subheader("🌊 River Discharge Data")
+                    st.dataframe(river_df, use_container_width=True)
+
+                    st.line_chart(
+                        river_df.set_index("Date")[
+                            ["River Discharge (m³/s)"]
+                        ]
+                    )
+
+                    st.session_state["global_river_data"] = river_df
+
+                else:
+                    st.warning(
+                        "River discharge data is not available "
+                        "for this location."
+                    )
+
+                # STEP 3: Fetch rainfall forecast
+                rain_response = requests.get(
+                    "https://api.open-meteo.com/v1/forecast",
+                    params={
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "daily": (
+                            "precipitation_sum,"
+                            "precipitation_probability_max"
+                        ),
+                        "forecast_days": 7,
+                        "timezone": "auto"
+                    },
+                    timeout=30
+                )
+
+                rain_response.raise_for_status()
+                rain_data = rain_response.json()
+
+                rain_daily = rain_data.get("daily", {})
+
+                if rain_daily.get("time"):
+                    rain_df = pd.DataFrame({
+                        "Date": rain_daily["time"],
+                        "Rainfall (mm)": rain_daily.get(
+                            "precipitation_sum", []
+                        ),
+                        "Rain Probability (%)": rain_daily.get(
+                            "precipitation_probability_max", []
+                        )
+                    })
+
+                    st.subheader("🌧️ Seven-Day Rainfall Forecast")
+                    st.dataframe(
+                        rain_df,
+                        use_container_width=True
+                    )
+
+                    st.session_state["global_flood_rainfall"] = rain_df
+
+                st.caption(
+                    "Data sources: Open-Meteo Flood API (GloFAS) "
+                    "and Open-Meteo Weather API."
+                )
+
+                st.info(
+                    "This module displays monitoring and forecast "
+                    "data. It does not generate an official flood warning."
+                )
+                # =====================================================
+                # COMBINED GLOBAL FLOOD ANALYSIS DASHBOARD
+                # =====================================================
+
+                st.divider()
+                st.header("🌊 Combined Flood Risk Analysis Dashboard")
+
+                if (
+                    "global_river_data" in st.session_state
+                    and "global_flood_rainfall" in st.session_state
+                ):
+
+                    river_check = st.session_state[
+                        "global_river_data"
+                    ].copy()
+
+                    rain_check = st.session_state[
+                        "global_flood_rainfall"
+                    ].copy()
+
+                    # Convert data into numeric format
+                    river_check["Date"] = pd.to_datetime(
+                        river_check["Date"], errors="coerce"
+                    )
+
+                    river_check["River Discharge (m³/s)"] = pd.to_numeric(
+                        river_check["River Discharge (m³/s)"],
+                        errors="coerce"
+                    )
+
+                    rain_check["Rainfall (mm)"] = pd.to_numeric(
+                        rain_check["Rainfall (mm)"],
+                        errors="coerce"
+                    )
+
+                    rain_check["Rain Probability (%)"] = pd.to_numeric(
+                        rain_check["Rain Probability (%)"],
+                        errors="coerce"
+                    )
+
+                    river_check = river_check.dropna(
+                        subset=["Date", "River Discharge (m³/s)"]
+                    ).sort_values("Date")
+
+                    # Use available river data up to today's date
+                    today = pd.Timestamp.now().normalize()
+
+                    observed_river = river_check[
+                        river_check["Date"] <= today
+                    ]
+
+                    if not observed_river.empty:
+
+                        latest_discharge = observed_river[
+                            "River Discharge (m³/s)"
+                        ].iloc[-1]
+
+                        recent_values = observed_river[
+                            "River Discharge (m³/s)"
+                        ].tail(7)
+
+                        if len(recent_values) >= 2:
+                            if recent_values.iloc[-1] > recent_values.iloc[0]:
+                                river_trend = "Increasing"
+                            elif recent_values.iloc[-1] < recent_values.iloc[0]:
+                                river_trend = "Decreasing"
+                            else:
+                                river_trend = "Stable"
+                        else:
+                            river_trend = "Insufficient data"
+
+                    else:
+                        latest_discharge = None
+                        river_trend = "Insufficient historical data"
+
+                    total_rainfall = rain_check[
+                        "Rainfall (mm)"
+                    ].sum()
+
+                    maximum_probability = rain_check[
+                        "Rain Probability (%)"
+                    ].max()
+
+                    # Display dashboard metrics
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        if latest_discharge is not None:
+                            st.metric(
+                                "Latest Available River Discharge",
+                                f"{latest_discharge:.2f} m³/s"
+                            )
+                        else:
+                            st.metric(
+                                "River Discharge",
+                                "Not available"
+                            )
+
+                    with col2:
+                        st.metric(
+                            "7-Day Forecast Rainfall",
+                            f"{total_rainfall:.1f} mm"
+                        )
+
+                    with col3:
+                        if pd.notna(maximum_probability):
+                            st.metric(
+                                "Maximum Rain Probability",
+                                f"{maximum_probability:.0f}%"
+                            )
+                        else:
+                            st.metric(
+                                "Rain Probability",
+                                "Not available"
+                            )
+
+                    # River trend
+                    st.subheader("📈 River Discharge Trend")
+
+                    if not observed_river.empty:
+                        st.write(
+                            f"Recent river discharge trend: *{river_trend}*"
+                        )
+
+                        st.line_chart(
+                            observed_river.tail(14).set_index("Date")[
+                                ["River Discharge (m³/s)"]
+                            ]
+                        )
+
+                    # Rainfall trend
+                    st.subheader("🌧️ Seven-Day Rainfall Analysis")
+
+                    st.line_chart(
+                        rain_check.set_index("Date")[
+                            ["Rainfall (mm)"]
+                        ]
+                    )
+
+                    st.dataframe(
+                        rain_check,
+                        use_container_width=True
+                    )
+
+                    st.subheader("⚠️ Preliminary Flood Indicators")
+
+                    st.write(
+                        f"- River discharge trend: {river_trend}"
+                    )
+
+                    st.write(
+                        f"- Total forecast rainfall: "
+                        f"{total_rainfall:.1f} mm"
+                    )
+
+                    st.info(
+                        "These are preliminary monitoring indicators, "
+                        "not validated flood-risk predictions. "
+                        "Official flood thresholds and local river "
+                        "conditions are required for reliable risk levels."
+                    )
+
+                else:
+                    st.warning(
+                        "Please fetch Global Flood Monitoring data first."
+                    )
+
+        except requests.exceptions.RequestException as error:
+            st.error(f"Data connection error: {error}")
+
+        except Exception as error:
+            st.error(f"Something went wrong: {error}")
+# =========================================================
+# WORLDWIDE LIVE WEATHER
+# =========================================================
+st.header("🌍 Worldwide Live Weather Monitoring")
+
+weather_location = st.text_input(
+    "Enter any city or country",
+    placeholder="Example: Tokyo, Japan"
+)
+
+if st.button("Fetch Worldwide Live Weather"):
+    if not weather_location.strip():
+        st.warning("Please enter a location.")
+    else:
+        try:
+            geo_response = requests.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={
+                    "name": weather_location.strip(),
+                    "count": 10,
+                    "language": "en",
+                    "format": "json"
+                },
+                timeout=20
+            )
+            geo_response.raise_for_status()
+            locations = geo_response.json().get("results", [])
+
+            if not locations:
+                st.warning("Location not found. Try a city name.")
+            else:
+                selected = locations[0]
+                latitude = selected["latitude"]
+                longitude = selected["longitude"]
+
+                weather_response = requests.get(
+                    "https://api.open-meteo.com/v1/forecast",
+                    params={
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "current": [
+                            "temperature_2m",
+                            "relative_humidity_2m",
+                            "precipitation",
+                            "rain",
+                            "wind_speed_10m"
+                        ],
+                        "daily": [
+                            "precipitation_sum",
+                            "precipitation_probability_max"
+                        ],
+                        "forecast_days": 3,
+                        "timezone": "auto"
+                    },
+                    timeout=20
+                )
+                weather_response.raise_for_status()
+                weather_data = weather_response.json()
+
+                st.session_state["global_weather"] = {
+                    "city": selected["name"],
+                    "country": selected.get("country", "Unknown"),
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "data": weather_data
+                }
+                st.success("Worldwide weather fetched successfully!")
+
+        except (requests.RequestException, ValueError, KeyError) as error:
+            st.error(f"Weather API error: {error}")
+
+if "global_weather" in st.session_state:
+    saved = st.session_state["global_weather"]
+    current = saved["data"].get("current", {})
+    daily = saved["data"].get("daily", {})
+
+    st.subheader(f"Weather: {saved['city']}, {saved['country']}")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Temperature", f"{current.get('temperature_2m', 'N/A')} °C")
+    c2.metric("Humidity", f"{current.get('relative_humidity_2m', 'N/A')}%")
+    c3.metric("Current precipitation", f"{current.get('precipitation', 'N/A')} mm")
+    c4.metric("Wind speed", f"{current.get('wind_speed_10m', 'N/A')} km/h")
+
+    st.write("Latitude:", saved["latitude"])
+    st.write("Longitude:", saved["longitude"])
+
+    if daily.get("time"):
+        forecast_df = pd.DataFrame({
+            "Date": daily.get("time", []),
+            "Rainfall (mm)": daily.get("precipitation_sum", []),
+            "Rain probability (%)": daily.get(
+                "precipitation_probability_max", []
+            )
+        })
+        st.subheader("3-Day Weather Forecast")
+        st.dataframe(forecast_df, hide_index=True, use_container_width=True)
+
+        if st.button("Use Weather Data for Flood Analysis"):
+            st.session_state["rainfall_input"] = float(
+                daily["precipitation_sum"][0] or 0
+            )
+            st.session_state["temperature_input"] = float(
+                current.get("temperature_2m", 0)
+            )
+            st.session_state["humidity_input"] = int(
+                current.get("relative_humidity_2m", 0)
+            )
+            st.session_state["weather_input_city"] = saved["city"]
+            st.success(
+                f"Weather values transferred for {saved['city']}. "
+                "Review the flood inputs below."
+            )
+
+    st.caption(
+        "Source: Open-Meteo. Forecast values are model-based and are not "
+        "official disaster warnings."
+    )
+    # =========================================================
+# HISTORICAL RAINFALL
+# =========================================================
 st.header("📊 Historical Rainfall Analysis")
 
 historical_city = st.selectbox(
@@ -350,28 +846,21 @@ historical_city = st.selectbox(
 
 if st.button("Fetch Last 7 Days Rainfall"):
     latitude, longitude = cities[historical_city]
-
-    historical_url = "https://api.open-meteo.com/v1/forecast"
-
-    historical_params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "daily": "precipitation_sum",
-        "past_days": 7,
-        "forecast_days": 1,
-        "timezone": "auto"
-    }
-
     try:
         historical_response = requests.get(
-            historical_url,
-            params=historical_params,
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "daily": "precipitation_sum",
+                "past_days": 7,
+                "forecast_days": 1,
+                "timezone": "auto"
+            },
             timeout=20
         )
         historical_response.raise_for_status()
-
-        historical_data = historical_response.json()
-        daily_data = historical_data["daily"]
+        daily_data = historical_response.json()["daily"]
 
         rainfall_df = pd.DataFrame({
             "Date": daily_data["time"],
@@ -379,79 +868,136 @@ if st.button("Fetch Last 7 Days Rainfall"):
         })
 
         st.subheader(f"Rainfall History: {historical_city}")
-        st.dataframe(
-            rainfall_df,
-            hide_index=True,
-            use_container_width=True
-        )
-
-        st.line_chart(
-            rainfall_df.set_index("Date")["Rainfall (mm)"]
-        )
-
+        st.dataframe(rainfall_df, hide_index=True, use_container_width=True)
+        st.line_chart(rainfall_df.set_index("Date")["Rainfall (mm)"])
         st.caption(
-            "Source: Open-Meteo. Historical weather estimates "
-            "are not official flood warnings."
+            "Source: Open-Meteo. Historical weather estimates are not "
+            "official flood warnings."
         )
-
     except (requests.RequestException, KeyError, ValueError) as error:
         st.error(f"Historical rainfall fetch failed: {error}")
 
-# Load flood mo
+
+# =========================================================
+# LOAD FLOOD MODEL SAFELY
+# =========================================================
+model = None
+model_load_error = None
+
 if os.path.exists("flood_model.pkl"):
-    model = joblib.load("flood_model.pkl")
+    try:
+        model = joblib.load("flood_model.pkl")
+    except Exception as error:
+        model_load_error = str(error)
 else:
-    model = None
-    # FLOOD MODEL PERFORMANCE
+    model_load_error = "flood_model.pkl was not found in the project folder."
+
+if model_load_error:
+    st.warning(f"Flood model status: {model_load_error}")
+    # =========================================================
+# FLOOD MODEL PERFORMANCE - CROSS VALIDATION
+# =========================================================
+st.subheader("📈 Flood Model Performance")
 
 if model is not None and os.path.exists("flood_data.csv"):
-    from sklearn.metrics import accuracy_score
-    from sklearn.model_selection import train_test_split
-    from sklearn.tree import DecisionTreeClassifier
+    try:
+        data = pd.read_csv("flood_data.csv")
 
-    st.subheader("📈 Flood Model Performance")
+        data.columns = data.columns.str.strip()
 
-    data = pd.read_csv("flood_data.csv")
+        data["risk"] = (
+            data["risk"]
+            .astype(str)
+            .str.strip()
+            .str.capitalize()
+        )
 
-    X = data[["rainfall", "temperature", "humidity"]]
-    y = data["risk"]
+        features = ["rainfall", "temperature", "humidity"]
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.25,
-        random_state=42,
-        
+        for col in features:
+            data[col] = pd.to_numeric(
+                data[col], errors="coerce"
+            )
+
+        data = data.dropna(
+            subset=features + ["risk"]
+        )
+
+        X = data[features]
+        y = data["risk"]
+
+        if y.value_counts().min() < 5:
+            st.warning(
+                "Not enough samples in every risk class "
+                "for 5-fold cross-validation."
+            )
+        else:
+            cv = StratifiedKFold(
+                n_splits=5,
+                shuffle=True,
+                random_state=42
+            )
+
+            scores = cross_val_score(
+                model,
+                X,
+                y,
+                cv=cv,
+                scoring="accuracy"
+            )
+
+            average_accuracy = scores.mean() * 100
+
+            st.metric(
+                "Average 5-Fold Cross Validation Accuracy",
+                f"{average_accuracy:.2f}%"
+            )
+
+           
+
+            st.caption(
+                "Accuracy is calculated using 5-fold cross-validation. "
+                "This is an evaluation estimate, not a guarantee "
+                "of real-world prediction accuracy."
+            )
+
+    except Exception as error:
+        st.error(
+            f"Flood model evaluation failed: {error}"
+        )
+
+elif not os.path.exists("flood_data.csv"):
+    st.warning(
+        "flood_data.csv not found."
     )
 
-    evaluation_model = DecisionTreeClassifier(
-        max_depth=3,
-        random_state=42
-    )
-
-    evaluation_model.fit(X_train, y_train)
-    predictions = evaluation_model.predict(X_test)
-
-    accuracy = accuracy_score(y_test, predictions) * 100
-
-    st.metric("Test Accuracy (Demo Dataset)", f"{accuracy:.2f}%")
-
-    st.caption(
-        "Evaluation uses a small synthetic dataset and a held-out test split. "
-        "This score does not measure real-world flood prediction accuracy."
-    )
 
 
-
-# Store analysis history during the current session
+# =========================================================
+# ANALYSIS HISTORY
+# =========================================================
 if "analysis_history" not in st.session_state:
-    st.session_state.analysis_history = []
+    st.session_state["analysis_history"] = []
 
-# Hazard selection
+
+# =========================================================
+# HAZARD SELECTION AND INPUTS
+# =========================================================
+st.header("⚠️ Hazard Risk Analysis")
+
 hazard = st.selectbox(
     "Select Hazard",
-    ["Flood", "Heatwave", "Earthquake", "Landslide","Wildfire"]
+    ["Flood", "Heatwave", "Earthquake", "Landslide", "Wildfire","Cyclone"]
 )
+
+selected_hazard_city = None
+
+if hazard in ["Earthquake", "Wildfire"]:
+    selected_hazard_city = st.selectbox(
+        f"Select city for {hazard} monitoring",
+        list(cities.keys()),
+        key=f"{hazard.lower()}_monitoring_city"
+    )
 
 st.subheader("Enter Environmental Data")
 
@@ -480,28 +1026,64 @@ humidity = st.slider(
 )
 
 magnitude = st.slider(
-    "Earthquake magnitude (demo input)",
-    0.0, 9.9, 2.0, 0.1
+    "Earthquake minimum magnitude (USGS historical-data filter)",
+    min_value=0.0,
+    max_value=9.9,
+    value=2.0,
+    step=0.1
 )
 
 slope = st.slider(
-    "Slope steepness (degrees)", 0, 90, 15
+    "Slope steepness (degrees)",
+    min_value=0,
+    max_value=90,
+    value=15
 )
 
-# Analyze button
+
+# =========================================================
+# ANALYZE HAZARD
+# =========================================================
 if st.button("Analyze Hazard Risk"):
     risk = None
+    risk_detail = ""
 
+    # ---------------- FLOOD ----------------
     if hazard == "Flood":
         if model is None:
-            st.error("Flood model not found. Check project folder.")
-        else:
-            input_data = pd.DataFrame(
-                [[rainfall, temperature, humidity]],
-                columns=["rainfall", "temperature", "humidity"]
+            st.error(
+                "Flood model is unavailable. Check flood_model.pkl "
+                "and the error shown above."
             )
-            risk = str(model.predict(input_data)[0])
+        else:
+            try:
+                input_data = pd.DataFrame(
+                    [[rainfall, temperature, humidity]],
+                    columns=["rainfall", "temperature", "humidity"]
+                )
 
+                expected_features = getattr(
+                    model, "feature_names_in_", None
+                )
+
+                if expected_features is not None:
+                    expected_features = list(expected_features)
+
+                    if set(expected_features) != set(input_data.columns):
+                        st.error(
+                            "The saved model expects different input features: "
+                            + ", ".join(expected_features)
+                        )
+                    else:
+                        input_data = input_data[expected_features]
+                        risk = str(model.predict(input_data)[0])
+                else:
+                    risk = str(model.predict(input_data)[0])
+
+            except Exception as error:
+                st.error(f"Flood prediction failed: {error}")
+
+    # ---------------- HEATWAVE ----------------
     elif hazard == "Heatwave":
         if temperature >= 40:
             risk = "High"
@@ -510,73 +1092,260 @@ if st.button("Analyze Hazard Risk"):
         else:
             risk = "Low"
 
+        risk_detail = (
+            "Illustrative temperature thresholds only; local heat-health "
+            "warnings also depend on humidity, duration and official criteria."
+        )
+    # ---------------- CYCLONE ----------------
+    elif hazard == "Cyclone":
+
+        st.subheader("🌀 Worldwide Cyclone Formation Probability")
+
+        st.info(
+            "Live cyclone formation guidance from NOAA "
+            "for the global tropical region."
+        )
+
+        st.markdown(
+            "[🌍 Open NOAA Global Cyclone Forecast]"
+            "(https://www.ospo.noaa.gov/products/ocean/tropical/tcfp/)"
+        )
+
+        st.components.v1.iframe(
+            "https://www.ospo.noaa.gov/products/ocean/tropical/tcfp/",
+            height=850,
+            scrolling=True
+        )
+
+        risk = "Monitoring"
+
+        risk_detail = (
+            "NOAA provides 24-hour and 48-hour cyclone "
+            "formation probability guidance. This is forecast "
+            "guidance, not a guaranteed cyclone prediction."
+        )
+
+    # ---------------- EARTHQUAKE ----------------
     elif hazard == "Earthquake":
-        latitude, longitude = cities[city]
+        latitude, longitude = cities[selected_hazard_city]
+
+        analysis_radius_km = 300
+        history_days = 365
+
+        history_start = (
+            datetime.utcnow() - timedelta(days=history_days)
+        ).strftime("%Y-%m-%d")
 
         params = {
             "format": "geojson",
             "latitude": latitude,
             "longitude": longitude,
-            "maxradiuskm": 1000,
-            "starttime": (
-                datetime.utcnow() -
-                timedelta(days=30)
-            ).strftime("%Y-%m-%d"),
-            "minmagnitude": 0,
+            "maxradiuskm": analysis_radius_km,
+            "starttime": history_start,
+            "minmagnitude": float(magnitude),
             "orderby": "time",
-            "limit": 2000
+            "limit": 20000
         }
 
         try:
-            response = requests.get(
-                "https://earthquake.usgs.gov/fdsnws/event/1/query",
-                params=params,
-                timeout=20
-            )
-            response.raise_for_status()
-            events = response.json().get("features", [])
+            with st.spinner(
+                "Fetching one year of historical earthquake records from USGS..."
+            ):
+                response = requests.get(
+                    "https://earthquake.usgs.gov/fdsnws/event/1/query",
+                    params=params,
+                    timeout=45
+                )
+                response.raise_for_status()
+                events = response.json().get("features", [])
 
             records = []
 
             for event in events:
-                p = event.get("properties", {})
-                g = event.get("geometry") or {}
-                coords = g.get("coordinates") or []
+                properties = event.get("properties") or {}
+                geometry = event.get("geometry") or {}
+                coordinates = geometry.get("coordinates") or []
 
-                if p.get("mag") is not None and len(coords) >= 3:
-                    records.append({
-                        "Magnitude": p["mag"],
-                        "Location": p.get("place", "Unknown"),
-                        "Depth (km)": coords[2],
-                        "Details": p.get("url", "")
-                    })
+                if properties.get("mag") is None or len(coordinates) < 2:
+                    continue
 
-            if not records:
+                event_lon = float(coordinates[0])
+                event_lat = float(coordinates[1])
+
+                event_depth = (
+                    float(coordinates[2])
+                    if len(coordinates) >= 3
+                    and coordinates[2] is not None
+                    else None
+                )
+
+                distance = haversine_km(
+                    latitude, longitude, event_lat, event_lon
+                )
+
+                event_time_ms = properties.get("time")
+
+                event_datetime = (
+                    datetime.utcfromtimestamp(event_time_ms / 1000)
+                    if event_time_ms else None
+                )
+
+                records.append({
+                    "Magnitude": float(properties["mag"]),
+                    "Location": properties.get("place", "Unknown"),
+                    "Distance from city (km)": round(distance, 2),
+                    "Depth (km)": event_depth,
+                    "Time (UTC)": (
+                        event_datetime.strftime("%Y-%m-%d %H:%M")
+                        if event_datetime else "Unknown"
+                    ),
+                    "Event datetime": event_datetime,
+                    "USGS Details": properties.get("url", "")
+                })
+
+            earthquake_df = pd.DataFrame(records)
+
+            if earthquake_df.empty:
+                st.info(
+                    f"No events of magnitude {magnitude:.1f}+ were returned "
+                    f"within {analysis_radius_km} km of {selected_hazard_city} "
+                    f"during the last {history_days} days."
+                )
+
                 risk = "Not available"
-                st.info("No matching earthquake records found.")
+                risk_detail = (
+                    "Insufficient matching historical events for this estimate. "
+                    "This does not mean future earthquake risk is zero."
+                )
 
             else:
-                earthquake_df = pd.DataFrame(records)
-                st.subheader("Recent Earthquake Records")
+                earthquake_df = earthquake_df.sort_values(
+                    "Distance from city (km)"
+                )
+
+                st.subheader(
+                    f"Historical Earthquake Records near {selected_hazard_city}"
+                )
+
+                st.write(
+                    f"Records: {len(earthquake_df)} | Search radius: "
+                    f"{analysis_radius_km} km | Historical window: "
+                    f"{history_days} days | Minimum magnitude: {magnitude:.1f}"
+                )
+
+                display_df = earthquake_df.drop(
+                    columns=["Event datetime"], errors="ignore"
+                )
+
                 st.dataframe(
-                    earthquake_df,
+                    display_df,
                     use_container_width=True,
                     hide_index=True
                 )
 
-                max_mag = earthquake_df["Magnitude"].max()
+                # Historical event rate and Poisson baseline estimates.
+                event_count_365 = len(earthquake_df)
+                daily_rate = event_count_365 / float(history_days)
 
-                if max_mag >= 7:
-                    risk = "High"
-                elif max_mag >= 5:
-                    risk = "Moderate"
-                else:
-                    risk = "Low"
+                probability_7 = (
+                    1 - math.exp(-daily_rate * 7)
+                ) * 100
 
-        except requests.RequestException as error:
+                probability_30 = (
+                    1 - math.exp(-daily_rate * 30)
+                ) * 100
+
+                st.subheader(
+                    "🧪 Experimental 7-Day and 30-Day Seismic Activity Estimates"
+                )
+
+                p1, p2, p3 = st.columns(3)
+                p1.metric("Historical matching events", event_count_365)
+                p2.metric(
+                    "7-day baseline probability",
+                    f"{probability_7:.2f}%"
+                )
+                p3.metric(
+                    "30-day baseline probability",
+                    f"{probability_30:.2f}%"
+                )
+
+                def estimate_band(probability):
+                    if probability < 5:
+                        return "Low"
+                    elif probability < 20:
+                        return "Moderate"
+                    return "Elevated"
+
+                band_7 = estimate_band(probability_7)
+                band_30 = estimate_band(probability_30)
+
+                st.write("*7-day experimental activity band:*", band_7)
+                st.write("*30-day experimental activity band:*", band_30)
+
+                # Compare recent 30-day activity with previous 335 days.
+                now_utc = datetime.utcnow()
+                event_dates = earthquake_df["Event datetime"].dropna()
+
+                recent_30_count = int(
+                    (event_dates >= now_utc - timedelta(days=30)).sum()
+                )
+
+                previous_335_count = int(
+                    (
+                        (event_dates < now_utc - timedelta(days=30))
+                        & (event_dates >= now_utc - timedelta(days=365))
+                    ).sum()
+                )
+
+                previous_30_day_equivalent = (
+                    previous_335_count / (335 / 30)
+                )
+
+                st.write("*Recent activity comparison*")
+                st.write(f"Events in latest 30 days: {recent_30_count}")
+                st.write(
+                    "Average 30-day-equivalent events in preceding 335 days: "
+                    f"{previous_30_day_equivalent:.2f}"
+                )
+
+                nearest_distance = float(
+                    earthquake_df["Distance from city (km)"].min()
+                )
+
+                strongest_magnitude = float(
+                    earthquake_df["Magnitude"].max()
+                )
+
+                st.write(
+                    f"Nearest recorded event: {nearest_distance:.2f} km away"
+                )
+
+                st.write(
+                    f"Strongest recorded event in the search area: "
+                    f"M{strongest_magnitude:.1f}"
+                )
+
+                risk = band_30
+
+                risk_detail = (
+                    "Experimental historical-rate estimate only. It assumes "
+                    "the past year's event rate remains constant and events "
+                    "follow a simplified Poisson process. It does NOT predict "
+                    "whether, when, where, or how strongly an earthquake will occur."
+                )
+
+                st.warning(
+                    "Scientific limitation: earthquakes cannot currently be "
+                    "reliably predicted for an exact city and future 7- or 30-day "
+                    "window. These percentages are historical-rate illustrations, "
+                    "not validated forecasts or probabilities of a damaging earthquake."
+                )
+
+        except (requests.RequestException, ValueError, KeyError) as error:
+            st.error(f"USGS earthquake data fetch failed: {error}")
             risk = None
-            st.error(f"USGS data fetch failed: {error}")
-
+            # ---------------- LANDSLIDE ----------------
     elif hazard == "Landslide":
         if rainfall >= 100 and slope >= 30:
             risk = "High"
@@ -584,82 +1353,141 @@ if st.button("Analyze Hazard Risk"):
             risk = "Moderate"
         else:
             risk = "Low"
+
+        risk_detail = (
+            "Illustrative rainfall and slope thresholds only. Actual "
+            "landslide risk depends on soil, geology, drainage and local conditions."
+        )
+
+    # ---------------- WILDFIRE ----------------
     elif hazard == "Wildfire":
-        if "wildfire_data" in st.session_state:
-            fire_df = st.session_state["wildfire_data"]
+        if "wildfire_data" not in st.session_state:
+            st.warning(
+                "Fetch NASA wildfire data first using the section below."
+            )
+        else:
+            fire_df = st.session_state["wildfire_data"].copy()
+            required_fire_columns = {"latitude", "longitude", "frp"}
 
-            if not fire_df.empty and "frp" in fire_df.columns:
-                frp_values = pd.to_numeric(
-                    fire_df["frp"], errors="coerce"
-                ).dropna()
+            if not required_fire_columns.issubset(fire_df.columns):
+                st.warning(
+                    "NASA data is missing one or more required columns: "
+                    "latitude, longitude, frp."
+                )
+            else:
+                for col in ["latitude", "longitude", "frp"]:
+                    fire_df[col] = pd.to_numeric(
+                        fire_df[col], errors="coerce"
+                    )
 
-                if not frp_values.empty:
-                    max_frp = frp_values.max()
+                fire_df = fire_df.dropna(
+                    subset=["latitude", "longitude", "frp"]
+                )
 
-                    if max_frp >= 50:
-                        risk = "High"
-                    elif max_frp >= 10:
-                        risk = "Moderate"
-                    else:
-                        risk = "Low"
+                city_lat, city_lon = cities[selected_hazard_city]
 
-                    st.write("Detected fire hotspots:", len(fire_df))
-                    st.write("Maximum Fire Radiative Power:", max_frp, "MW")
-                    st.caption(
-                        "This is a demo risk indicator based on satellite "
-                        "hotspot FRP, not a validated local wildfire forecast."
+                if fire_df.empty:
+                    st.warning(
+                        "No valid NASA fire hotspot records are available."
                     )
                 else:
-                    risk = None
-                    st.warning("FRP data is not available.")
-            else:
-                risk = None
-                st.warning("Wildfire data is empty or FRP is unavailable.")
-        else:
-            risk = None
-            st.warning("Please fetch NASA wildfire data first.")
+                    fire_df["Distance from city (km)"] = fire_df.apply(
+                        lambda row: haversine_km(
+                            city_lat,
+                            city_lon,
+                            row["latitude"],
+                            row["longitude"]
+                        ),
+                        axis=1
+                    )
 
-    # Show result and save it to history
+                    local_fires = fire_df[
+                        fire_df["Distance from city (km)"] <= 100
+                    ].copy()
+
+                    st.write(
+                        f"Fire hotspots within 100 km of "
+                        f"{selected_hazard_city}: {len(local_fires)}"
+                    )
+
+                    if local_fires.empty:
+                        risk = "Low"
+                        risk_detail = (
+                            "No valid satellite hotspot was found within "
+                            "100 km in the downloaded data. Satellite coverage "
+                            "and detection limitations apply; this is not a "
+                            "guarantee that no fire exists."
+                        )
+                    else:
+                        max_frp = float(local_fires["frp"].max())
+
+                        if max_frp >= 50:
+                            risk = "High"
+                        elif max_frp >= 10:
+                            risk = "Moderate"
+                        else:
+                            risk = "Low"
+
+                        risk_detail = (
+                            f"{len(local_fires)} hotspot(s) within 100 km. "
+                            f"Maximum FRP: {max_frp:.2f} MW. "
+                            "This is a simple satellite-hotspot indicator, "
+                            "not a validated wildfire forecast."
+                        )
+
+                        st.dataframe(
+                            local_fires.sort_values(
+                                "Distance from city (km)"
+                            ).head(100),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+    # ---------------- DISPLAY AND SAVE RESULT ----------------
     if risk is not None:
         st.subheader("Analysis Result")
         st.write("Selected hazard:", hazard)
 
         if risk == "High":
             st.error("🚨 Demo Risk Category: HIGH")
-            st.warning("Alert: High demo risk detected. Review conditions carefully.")
-
         elif risk == "Moderate":
             st.warning("⚠️ Demo Risk Category: MODERATE")
-
         elif risk == "Low":
             st.success("✅ Demo Risk Category: LOW")
-
         else:
-            st.info(
-                "Earthquake monitoring uses recent USGS records. "
-                "It does not predict future earthquakes."
-            )
+            st.info(f"Result: {risk}")
 
-        # Save this analysis
+        if risk_detail:
+            st.caption(risk_detail)
+
         record = {
+            "Date and Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "Hazard": hazard,
+            "Monitoring City": selected_hazard_city or (
+                st.session_state.get("weather_input_city", "Manual input")
+            ),
             "Rainfall (mm)": rainfall,
             "Temperature (°C)": temperature,
             "Humidity (%)": humidity,
-            "Earthquake Magnitude": magnitude,
+            "Minimum Earthquake Magnitude": magnitude,
             "Slope (degrees)": slope,
-            "Demo Risk Result": risk
+            "Demo Risk Result": risk,
+            "Details": risk_detail
         }
 
-        st.session_state.analysis_history.append(record)
+        st.session_state["analysis_history"].append(record)
 
         st.caption(
-            "Flood uses a model trained on a small sample dataset. "
-            "Heatwave and landslide use illustrative rules. "
-            "These results are not official emergency forecasts."
+            "Flood uses the saved ML model. Heatwave and landslide use "
+            "illustrative rules. Earthquake uses recent USGS observations. "
+            "Wildfire uses NASA FIRMS hotspot observations. None of these "
+            "outputs is an official emergency forecast."
         )
 
-# Input summary
+
+# =========================================================
+# INPUT SUMMARY
+# =========================================================
 st.subheader("Input Data Summary")
 
 input_summary = pd.DataFrame({
@@ -667,155 +1495,255 @@ input_summary = pd.DataFrame({
         "Rainfall (mm)",
         "Temperature (°C)",
         "Humidity (%)",
-        "Earthquake Magnitude",
+        "Earthquake minimum magnitude",
         "Slope (degrees)"
     ],
-    "Value": [
-        rainfall, temperature, humidity, magnitude, slope
-    ]
+    "Value": [rainfall, temperature, humidity, magnitude, slope]
 })
 
-st.dataframe(input_summary, hide_index=True)
+st.dataframe(
+    input_summary,
+    hide_index=True,
+    use_container_width=True
+)
 
-# Analysis history
+
+# =========================================================
+# ANALYSIS HISTORY AND CSV DOWNLOAD
+# =========================================================
 st.subheader("📋 Analysis History")
 
-if st.session_state.analysis_history:
-    history_df = pd.DataFrame(st.session_state.analysis_history)
+if st.session_state["analysis_history"]:
+    history_df = pd.DataFrame(st.session_state["analysis_history"])
 
-    st.dataframe(history_df, hide_index=True, use_container_width=True)
-
-    # Download report
-    csv_data = history_df.to_csv(index=False).encode("utf-8")
+    st.dataframe(
+        history_df,
+        hide_index=True,
+        use_container_width=True
+    )
 
     st.download_button(
         label="📥 Download Analysis Report (CSV)",
-        data=csv_data,
+        data=history_df.to_csv(index=False).encode("utf-8"),
         file_name="hazard_analysis_report.csv",
         mime="text/csv"
     )
 
     if st.button("Clear Analysis History"):
-        st.session_state.analysis_history = []
+        st.session_state["analysis_history"] = []
         st.rerun()
 
 else:
-    st.info("No analyses yet. Click Analyze Hazard Risk to create your first record.")
+    st.info(
+        "No analyses yet. Click Analyze Hazard Risk to create your first record."
+    )
 
-# ==============================
-# WORLDWIDE WILDFIRE MONITORING
-# NASA FIRMS Satellite Data
-# ==============================
-
+# =========================================================
+# WORLDWIDE WILDFIRE MONITORING - NASA FIRMS
+# =========================================================
 st.subheader("🔥 Worldwide Wildfire Monitoring")
 
 st.write(
-    "Monitor satellite-detected fire hotspots around the world "
+    "View satellite-detected fire hotspots around the world "
     "using NASA FIRMS data."
 )
 
 if st.button("Fetch Latest Wildfire Data"):
-
-    st.info("Button clicked! Connecting to NASA FIRMS...")
-
     try:
-        nasa_key = st.secrets["NASA_FIRMS_MAP_KEY"]
+        nasa_key = st.secrets.get("NASA_FIRMS_MAP_KEY", "")
 
-        wildfire_url = (
-            "https://firms.modaps.eosdis.nasa.gov/api/area/csv/"
-            f"{nasa_key}/VIIRS_SNPP_NRT/world/1"
-        )
-
-        with st.spinner("Fetching wildfire data from NASA..."):
-            response = requests.get(wildfire_url, timeout=60)
-
-        st.write("HTTP Status Code:", response.status_code)
-
-        if response.status_code != 200:
-            st.error("NASA API Error:")
-            st.code(response.text[:500])
-
-        elif not response.text.strip():
-            st.warning("NASA returned an empty response.")
-
-        elif "latitude" not in response.text.lower():
-            st.error("NASA did not return valid CSV data.")
-            st.code(response.text[:500])
-
+        if not nasa_key:
+            st.error("NASA FIRMS API key is missing.")
         else:
-            fire_df = pd.read_csv(StringIO(response.text))
+            fire_df = pd.DataFrame()
+
+            # Current satellite source with backup
+            sources = [
+                "VIIRS_NOAA21_NRT",
+                "VIIRS_NOAA20_NRT"
+            ]
+
+            for source in sources:
+                wildfire_url = (
+                    "https://firms.modaps.eosdis.nasa.gov/api/area/csv/"
+                    f"{nasa_key}/{source}/world/3"
+                )
+
+                with st.spinner(
+                    f"Fetching global fire data from {source}..."
+                ):
+                    response = requests.get(
+                        wildfire_url,
+                        timeout=90
+                    )
+
+                st.write(
+                    f"{source} HTTP Status:",
+                    response.status_code
+                )
+
+                response.raise_for_status()
+
+                if response.text.strip():
+                    temp_df = pd.read_csv(
+                        StringIO(response.text)
+                    )
+
+                    temp_df.columns = [
+                        str(col).strip().lower()
+                        for col in temp_df.columns
+                    ]
+
+                    if (
+                        not temp_df.empty
+                        and {"latitude", "longitude", "frp"}
+                        .issubset(temp_df.columns)
+                    ):
+                        fire_df = temp_df
+                        st.success(
+                            f"Data received from {source}"
+                        )
+                        break
 
             if fire_df.empty:
-                st.warning("No fire hotspots found in the latest data.")
-
+                st.warning(
+                    "No fire hotspot records were returned "
+                    "by the available satellite sources."
+                )
+                st.session_state["wildfire_data"] = pd.DataFrame(
+                    columns=["latitude", "longitude", "frp"]
+                )
             else:
+                for col in ["latitude", "longitude", "frp"]:
+                    fire_df[col] = pd.to_numeric(
+                        fire_df[col],
+                        errors="coerce"
+                    )
+
+                fire_df = fire_df.dropna(
+                    subset=["latitude", "longitude", "frp"]
+                )
+
                 st.session_state["wildfire_data"] = fire_df
-                st.success("NASA wildfire data fetched successfully!")
-                st.write("Total records received:", len(fire_df))
 
-    except Exception as e:
-        st.error(f"Wildfire data error: {e}")
+                st.success(
+                    "Worldwide wildfire data fetched successfully!"
+                )
+
+                st.write(
+                    "Total fire hotspots:",
+                    len(fire_df)
+                )
+
+    except Exception as error:
+        st.error(f"Wildfire data error: {error}")
 
 
+# =========================================================
+# WILDFIRE STATISTICS AND GLOBAL MAP
+# =========================================================
 if "wildfire_data" in st.session_state:
-
-    fire_df = st.session_state["wildfire_data"]
+    fire_df = st.session_state["wildfire_data"].copy()
 
     st.markdown("### 🔥 Wildfire Statistics")
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("Total Fire Hotspots", len(fire_df))
+    col1.metric(
+        "Total Fire Hotspots",
+        len(fire_df)
+    )
 
     if "confidence" in fire_df.columns:
-        high_confidence = (
-            fire_df["confidence"].astype(str).str.upper() == "H"
-        ).sum()
-        col2.metric("High Confidence Fires", int(high_confidence))
-    else:
-        col2.metric("High Confidence Fires", "N/A")
+        confidence = (
+            fire_df["confidence"]
+            .astype(str)
+            .str.upper()
+        )
 
-    if "frp" in fire_df.columns:
-        avg_frp = pd.to_numeric(
-            fire_df["frp"], errors="coerce"
-        ).mean()
-        col3.metric(
-            "Average Fire Radiative Power",
-            f"{avg_frp:.2f} MW" if pd.notna(avg_frp) else "N/A"
+        high_confidence = confidence.isin(
+            ["H", "HIGH"]
+        ).sum()
+
+        col2.metric(
+            "High Confidence Fires",
+            int(high_confidence)
         )
     else:
-        col3.metric("Average FRP", "N/A")
+        col2.metric(
+            "High Confidence Fires",
+            "N/A"
+        )
+
+    if "frp" in fire_df.columns:
+        frp_values = pd.to_numeric(
+            fire_df["frp"],
+            errors="coerce"
+        ).dropna()
+
+        average_frp = (
+            frp_values.mean()
+            if not frp_values.empty
+            else None
+        )
+
+        col3.metric(
+            "Average FRP",
+            f"{average_frp:.2f} MW"
+            if average_frp is not None
+            else "N/A"
+        )
+    else:
+        col3.metric(
+            "Average FRP",
+            "N/A"
+        )
 
     st.markdown("### 🌍 Global Fire Hotspot Map")
 
     if {"latitude", "longitude"}.issubset(fire_df.columns):
-        map_df = fire_df[["latitude", "longitude"]].copy()
+        map_df = fire_df[
+            ["latitude", "longitude"]
+        ].copy()
+
         map_df["latitude"] = pd.to_numeric(
-            map_df["latitude"], errors="coerce"
+            map_df["latitude"],
+            errors="coerce"
         )
+
         map_df["longitude"] = pd.to_numeric(
-            map_df["longitude"], errors="coerce"
+            map_df["longitude"],
+            errors="coerce"
         )
+
         map_df = map_df.dropna()
 
         if not map_df.empty:
             st.map(map_df.head(5000))
         else:
-            st.warning("No valid map coordinates available.")
+            st.warning(
+                "No valid map coordinates available."
+            )
 
     st.markdown("### 📊 Fire Detection Records")
-    st.dataframe(fire_df, use_container_width=True)
 
-    csv_data = fire_df.to_csv(index=False)
+    st.dataframe(
+        fire_df,
+        use_container_width=True
+    )
 
     st.download_button(
         "Download Wildfire Data CSV",
-        data=csv_data,
+        data=fire_df.to_csv(index=False).encode("utf-8"),
         file_name="worldwide_wildfire_data.csv",
         mime="text/csv"
-    )
+     
+    )        
+    
 
     st.caption(
-        "NASA FIRMS satellite detections are hotspot observations, "
-        "not confirmed wildfire incidents or official emergency warnings."
+        "NASA FIRMS satellite detections are hotspot observations, not "
+        "confirmed wildfire incidents or official emergency warnings."
     )
+
+   
